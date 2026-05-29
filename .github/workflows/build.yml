@@ -1,0 +1,106 @@
+name: Build Docker Images
+
+env:
+  DOCKERHUB_TAG: "shudack/hyperion-ng"
+  DOCKERHUB_SHORT_DESCRIPTION: "Unofficial Hyperion NG image for Hyperion-Project.org"
+  DOCKERHUB_README_FILE: "README.md"
+
+on:
+  push:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        release_type: [stable, nightly]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Should run?
+        id: should_run
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.release_type }}" = "nightly" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          elif [ "$(date -u +%u)" = "5" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup QEMU
+        if: steps.should_run.outputs.run == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Buildx
+        if: steps.should_run.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: steps.should_run.outputs.run == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Set Docker Tags
+        id: tags
+        if: steps.should_run.outputs.run == 'true'
+        run: |
+          if [ "${{ matrix.release_type }}" = "nightly" ]; then
+            # Nightly → only nightly tag
+            TAGS="${{ env.DOCKERHUB_TAG }}:nightly"
+          else
+            # Build temporary image to extract version
+            docker build -t hyperion-temp --build-arg RELEASE_TYPE=stable .
+
+            VERSION=$(docker run --rm hyperion-temp hyperiond --version | grep -oP '\d+\.\d+\.\d+')
+
+            if [ -z "$VERSION" ]; then
+              echo "ERROR: Could not extract Hyperion version!"
+              exit 1
+            fi
+
+            # Stable → version tag + latest
+            TAGS="${{ env.DOCKERHUB_TAG }}:${VERSION},${{ env.DOCKERHUB_TAG }}:latest"
+          fi
+
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build & Push
+        if: steps.should_run.outputs.run == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          build-args: |
+            RELEASE_TYPE=${{ matrix.release_type }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64,linux/arm/v7,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  pushreadme:
+    name: Update Docker Hub Description
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: christian-korneck/update-container-description-action@v1
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_PASS: ${{ secrets.DOCKER_HUB_PASSWORD }}
+        with:
+          destination_container_repo: ${{ env.DOCKERHUB_TAG }}
+          provider: dockerhub
+          short_description: ${{ env.DOCKERHUB_SHORT_DESCRIPTION }}
+          readme_file: ${{ env.DOCKERHUB_README_FILE }}
