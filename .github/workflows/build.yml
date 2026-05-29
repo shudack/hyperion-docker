@@ -92,7 +92,7 @@ jobs:
   pushreadme:
     name: Update Docker Hub Description
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: christian-korneck/update-container-description-action@v1
