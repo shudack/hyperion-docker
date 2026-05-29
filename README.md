@@ -11,6 +11,8 @@
   ![](https://img.shields.io/github/last-commit/shudack/hyperion-docker?style=plastic)
 ](https://github.com/shudack/hyperion-docker)
 
+<img width="1000" height="240" alt="image" src="https://github.com/user-attachments/assets/c8d28eec-c56d-4782-ba62-14825b3d23f7" />
+
 # Overview
 This is an unofficial Hyperion NG Docker image, designed for users who want a lightweight, auto‑updating, x86_64‑compatible installation of Hyperion NG.
 The image is based on Debian 12‑slim and automatically downloads and installs the latest available Hyperion NG release for x86_64 during build time.
