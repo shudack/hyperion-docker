@@ -104,3 +104,12 @@ jobs:
           provider: dockerhub
           short_description: ${{ env.DOCKERHUB_SHORT_DESCRIPTION }}
           readme_file: ${{ env.DOCKERHUB_README_FILE }}
+
+  keepalive:
+    name: Prevent Workflow Suspension
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    permissions:
+      actions: write
+    steps:
+      - uses: liskin/gh-workflow-keepalive@v1
