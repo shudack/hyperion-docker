@@ -5,6 +5,9 @@ ARG RELEASE_TYPE=stable
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Qt requires a UTF-8 locale; without this it warns and falls back at startup
+ENV LANG=C.UTF-8
+
 # Update and install dependencies
 RUN set -eux; \
     apt-get update; \
