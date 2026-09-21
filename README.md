@@ -15,7 +15,7 @@
 
 # Overview
 This is an unofficial Hyperion NG Docker image, designed for users who want a lightweight, auto‑updating, x86_64‑compatible installation of Hyperion NG.
-The image is based on Debian 12‑slim and automatically downloads and installs the latest available Hyperion NG release for x86_64 during build time.
+The image is based on Debian 13‑slim and automatically downloads and installs the latest available Hyperion NG release for x86_64 during build time.
 
 Hyperion NG provides a powerful Ambilight‑style LED control system with support for USB grabbers, LED strips, effects, and multiple input sources. This container makes deployment simple, reproducible, and hardware‑friendly.
 
@@ -24,7 +24,7 @@ Hyperion NG provides a powerful Ambilight‑style LED control system with suppor
 
 # Features
 - Automatic Release Installation — Downloads and installs the latest Hyperion NG x86_64 .deb package during build.
-- Lightweight Base Image — Built on Debian 12‑slim for minimal footprint.
+- Lightweight Base Image — Built on Debian 13‑slim for minimal footprint.
 - Full Hardware Support — USB, serial, SPI, and video capture devices can be passed through.
 - Persistent Configuration — Uses /config volume for storing settings.
 - Web UI Included — Access the Hyperion dashboard on port 8090.

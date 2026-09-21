@@ -1,12 +1,12 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-set -eux
+set -euxo pipefail
 
 # Import the Hyperion repository GPG key
-wget --no-check-certificate -qO- https://apt.hyperion-project.org/hyperion.pub.key \
+wget -qO- https://apt.hyperion-project.org/hyperion.pub.key \
     | gpg --dearmor -o /usr/share/keyrings/hyperion.pub.gpg
 
-# Get Debian codename (e.g., bookworm)
+# Get Debian codename (e.g., trixie)
 CODENAME=$(lsb_release -cs)
 
 if [ "${RELEASE_TYPE}" = "nightly" ]; then

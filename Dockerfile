@@ -1,6 +1,6 @@
-# Debian 12 (Bookworm) is LTS until 2028
-FROM debian:12-slim
-ARG RELEASE_TYPE=STABLE
+# Debian 13 (Trixie) is LTS until 2030
+FROM debian:13-slim
+ARG RELEASE_TYPE=stable
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,19 +13,17 @@ RUN set -eux; \
         wget \
         gnupg \
         dirmngr \
-        libgnutls30 \
+        libgnutls30t64 \
         lsb-release \
         ca-certificates \
-        libqt5sql5-sqlite \
         openssl \
         libx11-6 \
         libusb-1.0-0 \
         libftdi1-2 \
-        libexpat-dev \
+        libexpat1-dev \
         libgl-dev \
         libfreetype6 \
-        python3 \
-        python3-distutils; \
+        python3; \
     apt-get clean -y; \
     rm -rf /var/lib/apt/lists/*
 
