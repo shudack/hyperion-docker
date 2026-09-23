@@ -136,9 +136,7 @@ jobs:
     needs:
       - build-stable
 
-    if: >
-      github.ref == 'refs/heads/main' &&
-      needs.build-stable.result == 'success'
+    if: github.ref == 'refs/heads/main'
     
     steps:
       - name: Checkout
