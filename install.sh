@@ -24,28 +24,20 @@ apt-get update
 if [ "${RELEASE_TYPE}" = "stable" ] && [ -n "${HYPERION_VERSION:-}" ]; then
     echo "Requested Hyperion version: ${HYPERION_VERSION}"
 
-    APT_VERSION="$(
-        apt-cache policy hyperion |
-        awk '/Candidate:/ {print $2}'
+    PACKAGE_VERSION="$(
+        apt-cache madison hyperion \
+        | awk -v ver="${HYPERION_VERSION}" '$3 ~ "^" ver "([~-]|$)" { print $3; exit }'
     )"
 
-    if [ -z "${APT_VERSION}" ] || [ "${APT_VERSION}" = "(none)" ]; then
-        echo "ERROR: Hyperion package is not available from the configured APT repository."
+    if [ -z "${PACKAGE_VERSION}" ]; then
+        echo "ERROR: Hyperion version ${HYPERION_VERSION} not found in APT repository."
+        echo "Available versions:"
+        apt-cache madison hyperion || true
         exit 1
     fi
 
-    APT_UPSTREAM_VERSION="${APT_VERSION%%-*}"
-
-    echo "APT candidate version: ${APT_VERSION}"
-    echo "APT upstream version: ${APT_UPSTREAM_VERSION}"
-
-    if [ "${APT_UPSTREAM_VERSION}" != "${HYPERION_VERSION}" ]; then
-        echo "ERROR: Requested Hyperion ${HYPERION_VERSION}, but APT provides ${APT_VERSION}"
-        exit 1
-    fi
-
-    echo "Installing exact APT package version: ${APT_VERSION}"
-    apt-get install -y "hyperion=${APT_VERSION}"
+    echo "Installing Hyperion package version: ${PACKAGE_VERSION}"
+    apt-get install -y "hyperion=${PACKAGE_VERSION}"
 else
     echo "Installing latest Hyperion ${RELEASE_TYPE}"
     apt-get install -y hyperion
