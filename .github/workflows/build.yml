@@ -4,14 +4,22 @@ env:
   DOCKERHUB_TAG: "shudack/hyperion-ng"
   DOCKERHUB_SHORT_DESCRIPTION: "Unofficial Hyperion NG image for Hyperion-Project.org"
   DOCKERHUB_README_FILE: "README.md"
+  HYPERION_REPOSITORY: "hyperion-project/hyperion.ng"
 
 on:
   push:
     branches:
       - main
+
   schedule:
     - cron: "0 5 * * *"
+
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Publish even if this Hyperion stable version already exists on Docker Hub"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,135 +29,166 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  # ---------------------------------------------------------------------------
+  # Check latest stable Hyperion release
+  # ---------------------------------------------------------------------------
+  check:
+    name: Check for new Hyperion version
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+
+    steps:
+      - name: Check Hyperion version
+        id: check
+        shell: bash
+        env:
+          FORCE: ${{ inputs.force }}
+
+        run: |
+          set -euo pipefail
+
+          echo "Checking latest Hyperion stable release..."
+
+          VERSION="$(
+            curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${HYPERION_REPOSITORY}/releases/latest" |
+              jq -r '.tag_name' |
+              sed 's/^v//'
+          )"
+
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not determine Hyperion version (got '$VERSION')"
+            exit 1
+          fi
+
+          echo "Latest Hyperion stable version: ${VERSION}"
+
+          STATUS="$(
+            curl -sS \
+              -o /dev/null \
+              -w '%{http_code}' \
+              "https://hub.docker.com/v2/repositories/${DOCKERHUB_TAG}/tags/${VERSION}"
+          )"
+
+          echo "Docker Hub response: ${STATUS}"
+
+          if [[ "$STATUS" == "200" && "$FORCE" != "true" ]]; then
+
+            echo "Hyperion ${VERSION} already exists on Docker Hub."
+            echo "Skipping stable build."
+
+            PUBLISH=false
+
+          elif [[ "$STATUS" == "404" ]]; then
+
+            echo "Hyperion ${VERSION} is not yet published."
+            echo "Stable build will run."
+
+            PUBLISH=true
+
+          elif [[ "$STATUS" == "200" && "$FORCE" == "true" ]]; then
+
+            echo "Hyperion ${VERSION} already exists."
+            echo "Force enabled - rebuilding stable image."
+
+            PUBLISH=true
+
+          else
+
+            echo "::error::Unexpected Docker Hub response: ${STATUS}"
+            exit 1
+
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+
+
+  # ---------------------------------------------------------------------------
+  # Build stable / nightly
+  # ---------------------------------------------------------------------------
   build:
     name: Build & Push ${{ matrix.release_type }}
     runs-on: ubuntu-latest
 
+    needs:
+      - check
+
+    if: >
+      (matrix.release_type == 'stable' &&
+       needs.check.outputs.publish == 'true')
+      ||
+      (matrix.release_type == 'nightly' &&
+       (
+         github.event_name == 'schedule' ||
+         github.event_name == 'workflow_dispatch'
+       ))
+
     strategy:
       fail-fast: false
+
       matrix:
         release_type:
           - stable
           - nightly
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Should run?
-        id: should_run
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          EVENT="${{ github.event_name }}"
-          RELEASE_TYPE="${{ matrix.release_type }}"
-
-          case "$EVENT" in
-            push)
-              if [[ "$RELEASE_TYPE" == "stable" ]]; then
-                echo "run=true" >> "$GITHUB_OUTPUT"
-              else
-                echo "run=false" >> "$GITHUB_OUTPUT"
-              fi
-              ;;
-
-            schedule)
-              if [[ "$RELEASE_TYPE" == "nightly" ]]; then
-                echo "run=true" >> "$GITHUB_OUTPUT"
-              elif [[ "$(date -u +%u)" == "5" ]]; then
-                echo "run=true" >> "$GITHUB_OUTPUT"
-              else
-                echo "run=false" >> "$GITHUB_OUTPUT"
-              fi
-              ;;
-
-            workflow_dispatch)
-              echo "run=true" >> "$GITHUB_OUTPUT"
-              ;;
-
-            *)
-              echo "run=false" >> "$GITHUB_OUTPUT"
-              ;;
-          esac
-
       - name: Setup QEMU
-        if: steps.should_run.outputs.run == 'true'
         uses: docker/setup-qemu-action@v4
 
       - name: Setup Buildx
-        if: steps.should_run.outputs.run == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
-        if: steps.should_run.outputs.run == 'true'
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set Docker Tags
-        id: tags
-        if: steps.should_run.outputs.run == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ matrix.release_type }}" == "nightly" ]]; then
-            echo "tags=${{ env.DOCKERHUB_TAG }}:nightly" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "Building temporary stable image to determine Hyperion version..."
-
-          docker build \
-            --build-arg RELEASE_TYPE=stable \
-            --tag hyperion-temp:version \
-            .
-
-          VERSION="$(
-            docker run --rm hyperion-temp:version \
-              hyperiond --version |
-              grep -oE '[0-9]+\.[0-9]+\.[0-9]+' |
-              head -n 1
-          )"
-
-          if [[ -z "$VERSION" ]]; then
-            echo "::error::Could not extract Hyperion version!"
-            exit 1
-          fi
-
-          echo "Detected Hyperion version: $VERSION"
-
-          {
-            echo "tags<<EOF"
-            echo "${{ env.DOCKERHUB_TAG }}:${VERSION}"
-            echo "${{ env.DOCKERHUB_TAG }}:latest"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Build & Push
-        if: steps.should_run.outputs.run == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
+
           build-args: |
             RELEASE_TYPE=${{ matrix.release_type }}
-          tags: ${{ steps.tags.outputs.tags }}
+            HYPERION_VERSION=${{ matrix.release_type == 'stable' && needs.check.outputs.version || '' }}
+
+          tags: |
+            ${{ env.DOCKERHUB_TAG }}:${{ matrix.release_type == 'stable' && needs.check.outputs.version || 'nightly' }}
+            ${{ matrix.release_type == 'stable' && format('{0}:latest', env.DOCKERHUB_TAG) || '' }}
+
           platforms: |
             linux/amd64
             linux/arm/v7
             linux/arm64
+
           cache-from: type=gha,scope=${{ matrix.release_type }}
           cache-to: type=gha,mode=max,scope=${{ matrix.release_type }}
+
           sbom: true
           provenance: mode=max
 
+
+  # ---------------------------------------------------------------------------
+  # Update Docker Hub description
+  # ---------------------------------------------------------------------------
   pushreadme:
     name: Update Docker Hub Description
     runs-on: ubuntu-latest
+
     needs:
+      - check
       - build
 
     if: >
@@ -157,6 +196,7 @@ jobs:
       needs.build.result == 'success'
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -165,12 +205,17 @@ jobs:
         env:
           DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKER_PASS: ${{ secrets.DOCKERHUB_TOKEN }}
+
         with:
           destination_container_repo: ${{ env.DOCKERHUB_TAG }}
           provider: dockerhub
           short_description: ${{ env.DOCKERHUB_SHORT_DESCRIPTION }}
           readme_file: ${{ env.DOCKERHUB_README_FILE }}
 
+
+  # ---------------------------------------------------------------------------
+  # Prevent scheduled workflow suspension
+  # ---------------------------------------------------------------------------
   keepalive:
     name: Prevent Workflow Suspension
     runs-on: ubuntu-latest
@@ -181,5 +226,6 @@ jobs:
       actions: write
 
     steps:
+
       - name: Keep workflow alive
         uses: liskin/gh-workflow-keepalive@v1
